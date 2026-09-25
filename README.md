@@ -1,4 +1,4 @@
-# Olumide Felix Portfolio Platform
+# Fagbamila Olumide Felix Portfolio Platform
 
 Dynamic React/Vite portfolio and private Supabase-powered content dashboard.
 
