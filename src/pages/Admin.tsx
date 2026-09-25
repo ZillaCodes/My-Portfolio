@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import type { Project, ProjectImage, Resume as ResumeRecord, Skill } from '../types/content';
@@ -46,19 +46,95 @@ function Crud<T extends { id: string; [key: string]: unknown }>({ table, title, 
 type UploadedFile = { publicUrl: string; storagePath: string };
 
 function ProjectEditor({ upload }: { upload: (file: File, bucket: string, directory?: string) => Promise<UploadedFile | undefined> }) {
-  const [projects, setProjects] = useState<Project[]>([]); const [editing, setEditing] = useState<Partial<Project> | null>(null); const [images, setImages] = useState<ProjectImage[]>([]); const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('projects').select('*').order('display_order'); setProjects((data || []) as Project[]); setLoading(false); }, []);
-  const loadImages = useCallback(async (projectId: string) => { if (!supabase) return; const { data, error } = await supabase.from('project_images').select('*').eq('project_id', projectId).order('display_order'); if (!error) setImages((data || []) as ProjectImage[]); }, []);
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (editing?.id) loadImages(editing.id); else setImages([]); }, [editing?.id, loadImages]);
-  function begin(project: Partial<Project>) { setImages([]); setEditing(project); }
-  async function save(e: React.FormEvent<HTMLFormElement>) { e.preventDefault(); if (!supabase || !editing) return; if (!status) { alert('Please select whether this project is Completed or In Progress.'); return; } const f = new FormData(e.currentTarget); f.set('status', status); const fields = ['title', 'slug', 'short_description', 'full_description', 'thumbnail_url', 'categories', 'technologies', 'github_url', 'live_url', 'project_date', 'status', 'featured', 'published', 'display_order', 'problem', 'solution', 'how_it_works', 'key_features', 'contribution']; const values = Object.fromEntries(fields.map(k => [k, k === 'published' || k === 'featured' ? f.get(k) === 'on' : k === 'display_order' ? Number(f.get(k) || 0) : k === 'categories' || k === 'technologies' ? String(f.get(k) || '').split(',').map(x => x.trim()).filter(Boolean) : k === 'key_features' ? String(f.get(k) || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean) : f.get(k) || null])); const result = editing.id ? await supabase.from('projects').update(values).eq('id', editing.id).select().single() : await supabase.from('projects').insert(values).select().single(); if (result.error) return alert(result.error.message); await load(); begin(result.data as Project); }
-  async function addImages(files: FileList | null) { if (!files || !editing?.id) return; for (const file of Array.from(files)) { if (!file.type.startsWith('image/')) { alert(`${file.name} is not an image.`); continue; } const uploaded = await upload(file, 'project-images', `projects/${editing.id}`); if (!uploaded) continue; const { error } = await supabase!.from('project_images').insert({ project_id: editing.id, storage_path: uploaded.storagePath, alt_text: file.name.replace(/\.[^.]+$/, ''), display_order: images.length }); if (error) alert(error.message); } loadImages(editing.id); }
-  async function removeImage(image: ProjectImage) { if (!supabase || !confirm('Remove this project image?')) return; const { error } = await supabase.from('project_images').delete().eq('id', image.id); if (error) return alert(error.message); if (image.storage_path && !image.storage_path.startsWith('http')) await supabase.storage.from('project-images').remove([image.storage_path]); loadImages(editing!.id!); }
-  const fields = ['title', 'slug', 'short_description', 'full_description', 'thumbnail_url', 'categories', 'technologies', 'github_url', 'live_url', 'project_date', 'featured', 'published', 'display_order', 'problem', 'solution', 'how_it_works', 'key_features', 'contribution'];
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [editing, setEditing] = useState<Partial<Project> | null>(null);
+  const [images, setImages] = useState<ProjectImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<'completed' | 'in_progress' | ''>('');
-  useEffect(() => { setStatus((editing?.status as 'completed' | 'in_progress') || ''); }, [editing]);
-  return <section className="admin-panel"><div className="panel-head"><div><p className="eyebrow">MANAGE</p><h1>Projects</h1></div><button className="button primary" onClick={() => begin({ status: 'completed', featured: false, published: false, display_order: 0, categories: [], technologies: [], key_features: [] })}><Plus /> Add Project</button></div>{editing && <form className="editor" onSubmit={save}><h2>{editing.id ? 'Edit' : 'New'} Project</h2><fieldset className="status-selector"><legend>Project status</legend><label><input type="checkbox" checked={status === 'completed'} onChange={() => setStatus(status === 'completed' ? '' : 'completed')} /> Completed</label><label><input type="checkbox" checked={status === 'in_progress'} onChange={() => setStatus(status === 'in_progress' ? '' : 'in_progress')} /> In Progress</label><input type="hidden" name="status" value={status} /></fieldset>{fields.map(k => <label key={k}>{k.replaceAll('_', ' ')}{k === 'published' || k === 'featured' ? <input type="checkbox" name={k} defaultChecked={Boolean(editing[k])} /> : k === 'key_features' ? <textarea name={k} defaultValue={Array.isArray(editing[k]) ? editing[k].join('\n') : String(editing[k] || '')} /> : k.includes('description') || ['full_description', 'problem', 'solution', 'how_it_works', 'contribution'].includes(k) ? <textarea name={k} defaultValue={String(editing[k] || '')} /> : <input name={k} type={k === 'display_order' ? 'number' : 'text'} defaultValue={Array.isArray(editing[k]) ? editing[k].join(', ') : String(editing[k] || '')} />}</label>)}<div className="project-gallery"><div><p className="eyebrow">PROJECT GALLERY</p><h3>Images</h3><p className="empty">Save the project first, then add one or more images. Images are optional.</p></div>{editing.id ? <label className="button gallery-upload"><ImagePlus /> Add images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={e => { addImages(e.target.files); e.currentTarget.value = ''; }} /></label> : <p className="empty">Available after the first save.</p>}<div className="gallery-grid">{images.map(image => <figure key={image.id}><img src={image.storage_path.startsWith('http') ? image.storage_path : supabase!.storage.from('project-images').getPublicUrl(image.storage_path).data.publicUrl} alt={image.alt_text || ''} /><figcaption>{image.alt_text || 'Project image'}<button type="button" aria-label="Remove image" onClick={() => removeImage(image)}><Trash2 /></button></figcaption></figure>)}</div></div><button className="button primary">Save project</button><button type="button" className="button" onClick={() => setEditing(null)}>Cancel</button></form>}<div className="admin-list">{loading ? <p className="empty">Loading projects…</p> : projects.map(project => <article key={project.id}><div><h3>{project.title}</h3><p>{project.short_description}</p></div><span>{project.status === 'in_progress' ? 'In Progress' : 'Completed'}</span><button onClick={() => begin(project)}>Edit</button><button aria-label="Delete" onClick={async () => { if (confirm('Delete this project?')) { await supabase?.from('projects').delete().eq('id', project.id); load(); } }}><Trash2 /></button></article>)}</div></section>;
+  const [editorVersion, setEditorVersion] = useState(0);
+  const projectRequest = useRef(0);
+  const imageRequest = useRef(0);
+  const selectedProjectId = useRef<string | undefined>(undefined);
+
+  const load = useCallback(async () => {
+    if (!supabase) return;
+    const request = ++projectRequest.current;
+    setLoading(true);
+    const { data, error } = await supabase.from('projects').select('*').order('display_order');
+    if (request !== projectRequest.current) return;
+    if (!error) setProjects((data || []) as Project[]);
+    setLoading(false);
+  }, []);
+
+  const loadImages = useCallback(async (projectId: string) => {
+    if (!supabase) return;
+    const request = ++imageRequest.current;
+    const { data, error } = await supabase.from('project_images').select('*').eq('project_id', projectId).order('display_order');
+    if (request === imageRequest.current && selectedProjectId.current === projectId && !error) setImages((data || []) as ProjectImage[]);
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    selectedProjectId.current = editing?.id;
+    if (editing?.id) void loadImages(editing.id);
+    else { ++imageRequest.current; setImages([]); }
+  }, [editing?.id, loadImages]);
+
+  function begin(project: Partial<Project>) {
+    selectedProjectId.current = project.id;
+    ++imageRequest.current;
+    setImages([]);
+    setStatus((project.status as 'completed' | 'in_progress') || '');
+    setEditing(project);
+    setEditorVersion(version => version + 1);
+  }
+
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!supabase || !editing || saving) return;
+    if (!status) { alert('Please select whether this project is Completed or In Progress.'); return; }
+
+    const projectId = editing.id;
+    const f = new FormData(e.currentTarget);
+    f.set('status', status);
+    const fields = ['title', 'slug', 'short_description', 'full_description', 'thumbnail_url', 'categories', 'technologies', 'github_url', 'live_url', 'project_date', 'status', 'featured', 'published', 'display_order', 'problem', 'solution', 'how_it_works', 'key_features', 'contribution'];
+    const values = Object.fromEntries(fields.map(k => [k, k === 'published' || k === 'featured' ? f.get(k) === 'on' : k === 'display_order' ? Number(f.get(k) || 0) : k === 'categories' || k === 'technologies' ? String(f.get(k) || '').split(',').map(x => x.trim()).filter(Boolean) : k === 'key_features' ? String(f.get(k) || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean) : f.get(k) || null]));
+
+    setSaving(true);
+    const result = projectId
+      ? await supabase.from('projects').update(values).eq('id', projectId).select().single()
+      : await supabase.from('projects').insert(values).select().single();
+    setSaving(false);
+    if (result.error) return alert(result.error.message);
+    void load();
+    begin(result.data as Project);
+  }
+
+  async function addImages(files: FileList | null) {
+    if (!files || !editing?.id || saving) return;
+    const projectId = editing.id;
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) { alert(`${file.name} is not an image.`); continue; }
+      const uploaded = await upload(file, 'project-images', `projects/${projectId}`);
+      if (!uploaded) continue;
+      const { error } = await supabase!.from('project_images').insert({ project_id: projectId, storage_path: uploaded.storagePath, alt_text: file.name.replace(/\.[^.]+$/, ''), display_order: images.length });
+      if (error) alert(error.message);
+    }
+    if (selectedProjectId.current === projectId) void loadImages(projectId);
+  }
+
+  async function removeImage(image: ProjectImage) {
+    if (!supabase || !editing?.id || saving || !confirm('Remove this project image?')) return;
+    const projectId = editing.id;
+    const { error } = await supabase.from('project_images').delete().eq('id', image.id);
+    if (error) return alert(error.message);
+    if (image.storage_path && !image.storage_path.startsWith('http')) await supabase.storage.from('project-images').remove([image.storage_path]);
+    if (selectedProjectId.current === projectId) void loadImages(projectId);
+  }
+
+  const fields = ['title', 'slug', 'short_description', 'full_description', 'thumbnail_url', 'categories', 'technologies', 'github_url', 'live_url', 'project_date', 'featured', 'published', 'display_order', 'problem', 'solution', 'how_it_works', 'key_features', 'contribution'];
+  return <section className="admin-panel"><div className="panel-head"><div><p className="eyebrow">MANAGE</p><h1>Projects</h1></div><button className="button primary" disabled={saving} onClick={() => begin({ status: 'completed', featured: false, published: false, display_order: 0, categories: [], technologies: [], key_features: [] })}><Plus /> Add Project</button></div>{editing && <form key={editorVersion} className="editor" onSubmit={save}><h2>{editing.id ? 'Edit' : 'New'} Project</h2><fieldset className="status-selector"><legend>Project status</legend><label><input type="checkbox" checked={status === 'completed'} disabled={saving} onChange={() => setStatus(status === 'completed' ? '' : 'completed')} /> Completed</label><label><input type="checkbox" checked={status === 'in_progress'} disabled={saving} onChange={() => setStatus(status === 'in_progress' ? '' : 'in_progress')} /> In Progress</label><input type="hidden" name="status" value={status} /></fieldset>{fields.map(k => <label key={k}>{k.replaceAll('_', ' ')}{k === 'published' || k === 'featured' ? <input type="checkbox" name={k} disabled={saving} defaultChecked={Boolean(editing[k])} /> : k === 'key_features' ? <textarea name={k} disabled={saving} defaultValue={Array.isArray(editing[k]) ? editing[k].join('\n') : String(editing[k] || '')} /> : k.includes('description') || ['full_description', 'problem', 'solution', 'how_it_works', 'contribution'].includes(k) ? <textarea name={k} disabled={saving} defaultValue={String(editing[k] || '')} /> : <input name={k} disabled={saving} type={k === 'display_order' ? 'number' : 'text'} defaultValue={Array.isArray(editing[k]) ? editing[k].join(', ') : String(editing[k] || '')} />}</label>)}<div className="project-gallery"><div><p className="eyebrow">PROJECT GALLERY</p><h3>Images</h3><p className="empty">Save the project first, then add one or more images. Images are optional.</p></div>{editing.id ? <label className="button gallery-upload"><ImagePlus /> Add images<input type="file" disabled={saving} accept="image/jpeg,image/png,image/webp" multiple onChange={e => { void addImages(e.target.files); e.currentTarget.value = ''; }} /></label> : <p className="empty">Available after the first save.</p>}<div className="gallery-grid">{images.map(image => <figure key={image.id}><img src={image.storage_path.startsWith('http') ? image.storage_path : supabase!.storage.from('project-images').getPublicUrl(image.storage_path).data.publicUrl} alt={image.alt_text || ''} /><figcaption>{image.alt_text || 'Project image'}<button type="button" disabled={saving} aria-label="Remove image" onClick={() => void removeImage(image)}><Trash2 /></button></figcaption></figure>)}</div></div><button className="button primary" disabled={saving}>{saving ? 'Saving…' : 'Save project'}</button><button type="button" className="button" disabled={saving} onClick={() => { selectedProjectId.current = undefined; setEditing(null); }}>Cancel</button></form>}<div className="admin-list">{loading ? <p className="empty">Loading projects…</p> : projects.map(project => <article key={project.id}><div><h3>{project.title}</h3><p>{project.short_description}</p></div><span>{project.status === 'in_progress' ? 'In Progress' : 'Completed'}</span><button disabled={saving} onClick={() => begin(project)}>Edit</button><button aria-label="Delete" disabled={saving} onClick={async () => { if (confirm('Delete this project?')) { await supabase?.from('projects').delete().eq('id', project.id); void load(); } }}><Trash2 /></button></article>)}</div></section>;
 }
 
 function Dashboard() { const [tab, setTab] = useState<Tab>('overview'); const [user, setUser] = useState(''); useEffect(() => { supabase?.auth.getUser().then(({ data }) => setUser(data.user?.email || '')); }, []); async function upload(file: File, bucket: string, directory = 'uploads'): Promise<UploadedFile | undefined> { const storagePath = `${directory}/${crypto.randomUUID()}-${safeStorageFilename(file.name)}`; const { error } = await supabase!.storage.from(bucket).upload(storagePath, file, { contentType: file.type }); if (error) { alert(error.message); return; } return { storagePath, publicUrl: supabase!.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl }; } return <div className="admin"><aside><Link className="brand" to="/">OF<span>·</span></Link><p>{user}</p>{tabs.map(x => <button key={x} className={tab === x ? 'selected' : ''} onClick={() => setTab(x)}>{x}</button>)}<button onClick={() => supabase?.auth.signOut()}><LogOut /> Sign out</button></aside><main>{tab === 'overview' && <Overview />}{tab === 'projects' && <ProjectEditor key="projects" upload={upload} />}{tab === 'skills' && <Crud<Skill> key="skills" table="skills" title="Skills" starter={{ published: false, display_order: 0 }} fields={['name', 'category', 'description', 'icon', 'published', 'display_order']} />}{tab === 'about' && <ContentEditor />}{tab === 'resume' && <Resume upload={upload} />}{tab === 'contacts' && <Contacts />}{tab === 'settings' && <Settings />}</main></div>; }
