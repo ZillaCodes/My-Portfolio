@@ -1,36 +1,36 @@
-type BackgroundElement = {
-  left: string;
-  top: string;
-  type: 'node' | 'pulse' | 'path' | 'panel' | 'wireframe';
-  delay: number;
-  duration?: number;
-};
+import { useEffect, useState } from 'react';
 
-const elements: BackgroundElement[] = [
-  { left: '7%', top: '14%', type: 'node', delay: -4, duration: 25 },
-  { left: '17%', top: '67%', type: 'path', delay: -11, duration: 32 },
-  { left: '28%', top: '30%', type: 'panel', delay: -8, duration: 36 },
-  { left: '38%', top: '83%', type: 'pulse', delay: -2, duration: 12 },
-  { left: '47%', top: '16%', type: 'wireframe', delay: -18, duration: 42 },
-  { left: '56%', top: '53%', type: 'node', delay: -13, duration: 29 },
-  { left: '66%', top: '73%', type: 'panel', delay: -21, duration: 39 },
-  { left: '74%', top: '23%', type: 'pulse', delay: -5, duration: 15 },
-  { left: '83%', top: '57%', type: 'path', delay: -16, duration: 34 },
-  { left: '91%', top: '85%', type: 'node', delay: -9, duration: 27 },
-  { left: '12%', top: '90%', type: 'pulse', delay: -14, duration: 17 },
-  { left: '34%', top: '8%', type: 'node', delay: -19, duration: 31 },
-  { left: '93%', top: '37%', type: 'wireframe', delay: -7, duration: 44 },
+const panels = [
+  ['panel panel--dashboard', '11%', '21%'], ['panel panel--module', '73%', '13%'],
+  ['panel panel--mobile', '82%', '64%'], ['panel panel--chart', '18%', '76%'],
+  ['bracket', '44%', '38%'], ['bracket bracket--right', '58%', '84%'],
 ];
 
-/** A decorative, click-through AI product-building environment shared by public pages. */
+/** Decorative, click-through product-system layer; the hero's Three scene remains independent. */
 export default function BackgroundMotion() {
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setOffset(window.scrollY)); };
+    update(); window.addEventListener('scroll', update, { passive: true });
+    return () => { window.removeEventListener('scroll', update); cancelAnimationFrame(frame); };
+  }, []);
   return <div className="background-motion" aria-hidden="true">
-    {elements.map(({ left, top, type, delay, duration }) => (
-      <span
-        className={`background-motion__${type}`}
-        key={`${type}-${left}-${top}`}
-        style={{ left, top, animationDelay: `${delay}s`, animationDuration: `${duration}s` }}
-      />
-    ))}
+    <div className="system-grid system-grid--far" style={{ transform: `translateY(${offset * -.025}px)` }} />
+    <svg className="system-paths" viewBox="0 0 1440 960" preserveAspectRatio="none">
+      <path className="system-path" pathLength="1" d="M50 200H235L330 286H510" />
+      <path className="system-path system-path--delayed" pathLength="1" d="M838 128H1080L1182 244H1370" />
+      <path className="system-path" pathLength="1" d="M104 748H302L410 641H682L792 730" />
+      <path className="system-path system-path--subtle" d="M694 458h172l74-76h194" />
+      <circle className="system-flow" r="3" pathLength="1"><animateMotion dur="16s" repeatCount="indefinite" path="M50 200H235L330 286H510" /></circle>
+      <circle className="system-flow system-flow--delayed" r="3" pathLength="1"><animateMotion dur="21s" repeatCount="indefinite" path="M104 748H302L410 641H682L792 730" /></circle>
+    </svg>
+    <div className="system-depth system-depth--middle" style={{ transform: `translateY(${offset * -.055}px)` }}>
+      {panels.map(([className, left, top]) => <span key={`${className}-${left}`} className={`system-${className}`} style={{ left, top }} />)}
+      <span className="system-node system-node--one" /><span className="system-node system-node--two" /><span className="system-node system-node--three" />
+    </div>
+    <div className="system-depth system-depth--close" style={{ transform: `translateY(${offset * -.09}px)` }}>
+      <span className="system-window" /><span className="system-orbit" /><span className="system-scan" />
+    </div>
   </div>;
 }
