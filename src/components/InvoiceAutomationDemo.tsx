@@ -11,9 +11,10 @@ function Notice({ title, children, tone = '' }: { title: string; children: React
 export default function InvoiceAutomationDemo() {
   const [step, setStep] = useState(-1);
   const [complete, setComplete] = useState(false);
+  const [initializing, setInitializing] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   const started = step >= 0;
-  const start = () => { window.clearTimeout(timer.current); setComplete(false); setStep(0); };
+  const start = () => { window.clearTimeout(timer.current); setComplete(false); setInitializing(true); window.setTimeout(() => { setStep(0); setInitializing(false); }, 180); };
   const skip = () => { window.clearTimeout(timer.current); setStep(stages.length - 1); setComplete(true); };
   useEffect(() => {
     if (step < 0 || complete) return;
@@ -26,7 +27,7 @@ export default function InvoiceAutomationDemo() {
   return <section id="invoice-demo" className="invoice-demo" aria-labelledby="invoice-demo-title">
     <div className="invoice-demo-heading"><p className="eyebrow">INTERACTIVE SYSTEM DEMO</p><h2 id="invoice-demo-title">See the Automation in Action</h2><p>Watch a simulated invoice move through an automated AI-powered processing, validation, payment reminder, and reporting system.</p><small>Interactive demonstration — simulated for portfolio presentation.</small></div>
     <div className="demo-controls">
-      <button className="button primary" onClick={start}><Play />{complete ? 'Run Demo Again' : started ? 'Restart Simulation' : 'Start Simulation'}</button>
+      <button className="button primary" onClick={start} disabled={initializing}><Play />{initializing ? 'Initializing simulation…' : complete ? 'Run Demo Again' : started ? 'Restart Simulation' : 'Start Simulation'}</button>
       <button className="button" onClick={skip}><SkipForward />Skip Animation</button>
     </div>
 
